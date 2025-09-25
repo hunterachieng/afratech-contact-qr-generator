@@ -187,7 +187,7 @@ export default function Page() {
   return (
     <div className="container mx-auto max-w-3xl p-6 text-center">
       <h1 className="text-2xl font-semibold mb-4 text-center">
-        Afritech Africa Contact QR Generator
+        Afratech Africa Contact QR Generator
       </h1>
 
       <Card className="mb-6">
