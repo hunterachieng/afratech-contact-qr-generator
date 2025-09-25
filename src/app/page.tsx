@@ -90,7 +90,6 @@ export default function Page() {
     return values.format === "vcard" ? buildVCard(values) : buildPlain(values);
   }, [values]);
 
-  
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const data = {
@@ -118,13 +117,17 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function buildShareUrlLocal(v: FormValues) {
-    const u = new URL(window.location.href);
-    u.searchParams.set("name", v.name);
-    u.searchParams.set("email", v.email);
-    u.searchParams.set("phone", v.phone);
-    u.searchParams.set("office", v.office);
-    u.searchParams.set("format", v.format);
+  function encodeBase64(str: string) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = "";
+    bytes.forEach((b) => (bin += String.fromCharCode(b)));
+    return btoa(bin);
+  }
+
+  function buildShareUrlLocalFromPayload(payload: string) {
+    const u = new URL(window.location.origin);
+    u.pathname = "/qr";
+    u.searchParams.set("p", encodeBase64(payload)); // encoded payload
     return u.toString();
   }
 
@@ -137,16 +140,14 @@ export default function Page() {
     try {
       setHasGenerated(false);
       setQrDataUrl("");
-      const data = payload;
-      if (!data) return;
-
+      const data = payload; 
       const url = await QRCode.toDataURL(data, {
         width: 512,
         margin: 2,
-        color: { dark: "#000000", light: "#ffffff" },
+        color: { dark: "#000", light: "#fff" },
       });
       setQrDataUrl(url);
-      setShareUrl(buildShareUrlLocal(form.getValues()));
+      setShareUrl(buildShareUrlLocalFromPayload(data)); // <-- QR-only link
       setHasGenerated(true);
       toast.success("QR generated.");
     } catch (error) {
@@ -294,7 +295,10 @@ export default function Page() {
               />
 
               <div className="flex flex-wrap gap-2 pt-2">
-                <Button type="submit" className="bg-[#2564a6] hover:bg-[#7ab8dc]" >
+                <Button
+                  type="submit"
+                  className="bg-[#2564a6] hover:bg-[#7ab8dc]"
+                >
                   Generate QR
                 </Button>
                 <span className={!hasGenerated ? "cursor-not-allowed" : ""}>
@@ -307,15 +311,15 @@ export default function Page() {
                     Download PNG
                   </Button>
                 </span>
-                 <span className={!hasGenerated ? "cursor-not-allowed" : ""}>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={!hasGenerated}
-                  onClick={onShareLink}
-                >
-                  Share Link
-                </Button>
+                <span className={!hasGenerated ? "cursor-not-allowed" : ""}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!hasGenerated}
+                    onClick={onShareLink}
+                  >
+                    Share Link
+                  </Button>
                 </span>
               </div>
             </form>
