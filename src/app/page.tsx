@@ -1,103 +1,358 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import QRCode from "qrcode";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+type Format = "vcard" | "text";
+
+const FormSchema = z.object({
+  name: z.string().min(2, { message: "Full name is required" }),
+  email: z.string().email({ message: "Invalid email address" }),
+  phone: z.string().min(5, { message: "Phone number is required" }).max(13),
+  office: z.string(),
+  format: z.enum(["vcard", "text"]),
+});
+
+type FormValues = z.infer<typeof FormSchema>;
+
+function buildVCard({ name, email, phone, office }: FormValues) {
+  const n = name.trim();
+  const parts = n.split(" ");
+  const family = parts.slice(-1)[0] || "";
+  const given = parts.slice(0, -1).join(" ") || n;
+  const adr = (office || "").trim();
+
+  return [
+    "BEGIN:VCARD",
+    "VERSION:3.0",
+    `N:${family};${given};;;`,
+    `FN:${n}`,
+    `TEL;TYPE=CELL:${phone.trim()}`,
+    `EMAIL;TYPE=INTERNET:${email.trim()}`,
+    `ADR;TYPE=WORK:;;${adr};;;;`,
+    "END:VCARD",
+  ].join("\n");
+}
+
+function buildPlain({ name, email, phone, office, format }: FormValues) {
+  return [
+    `Name: ${name.trim()}`,
+    `Email: ${email.trim()}`,
+    `Phone: ${phone.trim()}`,
+    `Office: ${(office || "").trim()}`,
+    `Format: ${format}`,
+  ].join("\n");
+}
+
+export default function Page() {
+  const form = useForm<FormValues>({
+    resolver: zodResolver(FormSchema),
+    defaultValues: {
+      name: "",
+      email: "",
+      phone: "",
+      office: "",
+      format: "vcard",
+    },
+    mode: "onChange",
+  });
+
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [shareUrl, setShareUrl] = useState("");
+  const [hasGenerated, setHasGenerated] = useState(false);
+
+  const values = form.watch();
+  const payload = useMemo(() => {
+    if (!values.name || !values.email || !values.phone) return "";
+    return values.format === "vcard" ? buildVCard(values) : buildPlain(values);
+  }, [values]);
+
+  
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const data = {
+      name: params.get("name") ?? "",
+      email: params.get("email") ?? "",
+      phone: params.get("phone") ?? "",
+      office: params.get("office") ?? "",
+      format: (params.get("format") as Format) ?? "vcard",
+    };
+    const anyPresent = Object.values(data).some(Boolean);
+    if (anyPresent) {
+      form.reset({
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        office: data.office,
+        format: (["vcard", "text"] as const).includes(data.format)
+          ? data.format
+          : "vcard",
+      });
+      if (data.name && data.email && data.phone) {
+        void generateQR();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function buildShareUrlLocal(v: FormValues) {
+    const u = new URL(window.location.href);
+    u.searchParams.set("name", v.name);
+    u.searchParams.set("email", v.email);
+    u.searchParams.set("phone", v.phone);
+    u.searchParams.set("office", v.office);
+    u.searchParams.set("format", v.format);
+    return u.toString();
+  }
+
+  async function generateQR() {
+    const valid = await form.trigger();
+    if (!valid) {
+      toast.error("Please fix the form errors.");
+      return;
+    }
+    try {
+      setHasGenerated(false);
+      setQrDataUrl("");
+      const data = payload;
+      if (!data) return;
+
+      const url = await QRCode.toDataURL(data, {
+        width: 512,
+        margin: 2,
+        color: { dark: "#000000", light: "#ffffff" },
+      });
+      setQrDataUrl(url);
+      setShareUrl(buildShareUrlLocal(form.getValues()));
+      setHasGenerated(true);
+      toast.success("QR generated.");
+    } catch (error) {
+      toast.error((error as Error).message || "Failed to generate QR");
+    }
+  }
+
+  async function onDownload() {
+    if (!qrDataUrl) return;
+    const a = document.createElement("a");
+    a.href = qrDataUrl;
+    a.download = "contact-qr.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  async function onShareLink() {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      toast.success("Link copied to clipboard!");
+    } catch {
+      try {
+        const el = document.createElement("input");
+        el.value = shareUrl;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+        toast.success("Link copied to clipboard!");
+      } catch {
+        prompt("Copy this link:", shareUrl);
+      }
+    }
+  }
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="container mx-auto max-w-3xl p-6 text-center">
+      <h1 className="text-2xl font-semibold mb-4 text-center">
+        Afritech Africa Contact QR Generator
+      </h1>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Form {...form}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void generateQR();
+              }}
+              className="grid gap-4"
+            >
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Full Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Amina Okoro" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="email"
+                          placeholder="amina@example.com"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact (Phone)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="tel"
+                          placeholder="+254712345678"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="office"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Office Location</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Nairobi HQ, 3rd Floor" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="format"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>QR Format</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select format" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="vcard">
+                          vCard (recommended)
+                        </SelectItem>
+                        <SelectItem value="text">Plain text</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="flex flex-wrap gap-2 pt-2">
+                <Button type="submit" className="bg-[#2564a6] hover:bg-[#7ab8dc]" >
+                  Generate QR
+                </Button>
+                <span className={!hasGenerated ? "cursor-not-allowed" : ""}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!hasGenerated}
+                    onClick={onDownload}
+                  >
+                    Download PNG
+                  </Button>
+                </span>
+                 <span className={!hasGenerated ? "cursor-not-allowed" : ""}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!hasGenerated}
+                  onClick={onShareLink}
+                >
+                  Share Link
+                </Button>
+                </span>
+              </div>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+      {hasGenerated && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Preview</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="min-h-[264px] grid place-items-center border border-dashed rounded-md p-4">
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt="QR Code" width={256} height={256} />
+              ) : (
+                <p className="text-muted-foreground">
+                  Fill the required fields, then click{" "}
+                  <span className="font-medium">Generate QR</span>.
+                </p>
+              )}
+            </div>
+
+            <p className="text-sm text-muted-foreground mt-3 break-all">
+              Shareable link:{" "}
+              <a
+                className="underline"
+                href={shareUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {shareUrl}
+              </a>
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
