@@ -32,36 +32,55 @@ const FormSchema = z.object({
   name: z.string().min(2, { message: "Full name is required" }),
   email: z.string().email({ message: "Invalid email address" }),
   phone: z.string().min(5, { message: "Phone number is required" }).max(13),
+  role: z.string().min(3, { message: "Role is required" }),
+  website: z
+    .string()
+    .url({ message: "Invalid website URL" })
+    .optional()
+    .or(z.literal("")),
   office: z.string(),
   format: z.enum(["vcard", "text"]),
 });
 
 type FormValues = z.infer<typeof FormSchema>;
 
-function buildVCard({ name, email, phone, office }: FormValues) {
+function buildVCard({ name, email, phone, office, role, website }: FormValues) {
   const n = name.trim();
   const parts = n.split(" ");
   const family = parts.slice(-1)[0] || "";
   const given = parts.slice(0, -1).join(" ") || n;
-  const adr = (office || "").trim();
 
   return [
     "BEGIN:VCARD",
     "VERSION:3.0",
     `N:${family};${given};;;`,
     `FN:${n}`,
+    role ? `TITLE:${role}` : "",
+    website ? `URL:${website}` : "",
     `TEL;TYPE=CELL:${phone.trim()}`,
     `EMAIL;TYPE=INTERNET:${email.trim()}`,
-    `ADR;TYPE=WORK:;;${adr};;;;`,
+    office ? `ADR;TYPE=WORK:;;${office};;;;` : "",
     "END:VCARD",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
-function buildPlain({ name, email, phone, office, format }: FormValues) {
+function buildPlain({
+  name,
+  email,
+  phone,
+  office,
+  format,
+  role,
+  website,
+}: FormValues) {
   return [
     `Name: ${name.trim()}`,
     `Email: ${email.trim()}`,
     `Phone: ${phone.trim()}`,
+    `Role: ${role.trim()}`,
+    `Website: ${website || ""}`,
     `Office: ${(office || "").trim()}`,
     `Format: ${format}`,
   ].join("\n");
@@ -74,6 +93,8 @@ export default function Page() {
       name: "",
       email: "",
       phone: "",
+      role: "",
+      website: "",
       office: "",
       format: "vcard",
     },
@@ -97,6 +118,8 @@ export default function Page() {
       email: params.get("email") ?? "",
       phone: params.get("phone") ?? "",
       office: params.get("office") ?? "",
+      role: params.get("role") ?? "",
+      website: params.get("website") ?? "",
       format: (params.get("format") as Format) ?? "vcard",
     };
     const anyPresent = Object.values(data).some(Boolean);
@@ -127,7 +150,7 @@ export default function Page() {
   function buildShareUrlLocalFromPayload(payload: string) {
     const u = new URL(window.location.origin);
     u.pathname = "/qr";
-    u.searchParams.set("p", encodeBase64(payload)); // encoded payload
+    u.searchParams.set("p", encodeBase64(payload));
     return u.toString();
   }
 
@@ -140,7 +163,7 @@ export default function Page() {
     try {
       setHasGenerated(false);
       setQrDataUrl("");
-      const data = payload; 
+      const data = payload;
       const url = await QRCode.toDataURL(data, {
         width: 512,
         margin: 2,
@@ -264,6 +287,33 @@ export default function Page() {
                     <FormLabel>Office Location</FormLabel>
                     <FormControl>
                       <Input placeholder="Nairobi HQ, 3rd Floor" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="role"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Role</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Software Engineer" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="website"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Website</FormLabel>
+                    <FormControl>
+                      <Input placeholder="https://example.com" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
